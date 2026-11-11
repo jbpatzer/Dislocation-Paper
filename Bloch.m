@@ -10,6 +10,7 @@ function evs = Bloch(D, wl, N, gamma, plotflag)
 %
 % evs - 2N x length(gamma) matrix of complex eigenvalues
 
+format compact
 if mod(N, 2) ~= 0
     error('Number of grid points N must be even for standard spectral methods.');
 end

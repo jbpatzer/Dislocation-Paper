@@ -1,8 +1,8 @@
-function IVPsolver(N,wl,D,tend,dtout,moviefile,movietime,umax,plotflag,contflag,showdiff,Ninitial,delta)
+function IVPsolver(N,wl0,D,tend,dtout,moviefile,movietime,umax,plotflag,contflag,showdiff,Ninitial,ictype,delta,epsilon)
 %% Solve the initial value problem (IVP), formulated in terms of L = log(u)
 
 % N = number of grid points
-% wl  = length of computational domain (solution has this period)
+% wl0  = wavelength of the underlying periodic solution
 % D = diffusion parameter
 % tend - Solve for 0 < t < tend
 % moviefile - name of movie file - empty for no movie
@@ -11,38 +11,78 @@ function IVPsolver(N,wl,D,tend,dtout,moviefile,movietime,umax,plotflag,contflag,
 % plotflag - plot if true
 % contflag - continue from crashed run if true
 % showdiff - also plot difference from unperturbed solution if true
-% Ninitial - number of initial peaks
-% delta - dislocation length
+% Ninitial - number of initial peaks 
+% ictype- 1 = single dislocation, 2 = two dislocations, 3 = long wavelength disturbance
+% delta - dislocation length/perturbation size
+% epsilon - long lengthscale
 
 format short e
 format compact
 t0 = toc;
-Db = Dbar(2^9,wl/Ninitial,D,[]);
+Db = Dbar(2^9,wl0,D,[]);
 
 if contflag
-    load('cont','t','tout','x','L','uold','xpeaks','k1');
+    load('cont','t','tout','x','L','uold','u0');
     xold = x; u = exp(L); 
 else
     xold = []; uold = []; 
+
     % Initial condition
 
-    wl0 = wl/Ninitial; % underlying wavelength
+    wl = wl0*Ninitial; % wavelength of the whole periodic domain
     % Find F_p and repeat periodically to find unperturbed solution
     [L,x0] = periodic(2^10,wl0,D,[],false);
-    pp = csape(x0, L, 'periodic');
-    
-    %Dislocate
-    wl = wl+delta;
+
+    switch ictype
+        case 1
+            wl = wl+delta;
+            pp = csape(x0, L, 'periodic');
+        case 2
+            wl = wl+2*delta;
+            pp = csape(x0-0.5*wl0, L, 'periodic');
+        case 3
+            pp = csape(x0-0.5*wl0, L, 'periodic');
+        otherwise
+            disp('ictype = 1,2 or 3')
+            return
+    end
+
     x = linspace(-0.5*wl,0.5*wl,N+1);
-    L = displace(x,pp,wl0,delta);
+
+    L = zeros(size(x));
+
+    switch ictype
+        case 1
+            for k = 1:length(x)
+                if abs(x(k))<0.5*delta
+                    L(k) = ppval(pp,0);
+                else
+                    L(k) = ppval(pp,mod(x(k)-sign(x(k))*0.5*delta,wl0));
+                end
+            end
+        case 2
+            ep1 = 1/epsilon;
+            for k = 1:length(x)
+                if ((x(k)-ep1>0)&&(x(k)-ep1<delta))||((x(k)+ep1<0)&&(x(k)+ep1>delta))
+                    L(k) = ppval(pp,0);
+                elseif (x(k)<=ep1)&&(x(k)>=-ep1)
+                    L(k) = ppval(pp,mod(x(k)+0.5*wl0,wl0)-0.5*wl0);
+                elseif x(k)>=ep1+delta
+                    L(k) = ppval(pp,mod(x(k)+0.5*wl0-delta,wl0)-0.5*wl0);
+                else
+                    L(k) = ppval(pp,mod(x(k)+0.5*wl0+delta,wl0)-0.5*wl0);
+                end
+            end
+        case 3
+            L = ppval(pp,mod(x+0.5*wl0+delta*sin(2*pi*epsilon*x),wl0)-0.5*wl0);
+    end
 
     u = exp(L);
     u = u(2:end); L = L(2:end);
     x = x(2:end);
 
     t = 0; tout = 0; tout2=0;
-    u0 = exp(ppval(pp,mod(x,wl0))); % Unperturbed solution
-    du0 = u-u0;
+    u0 = exp(ppval(pp,mod(x+0.5*wl0,wl0)-0.5*wl0)); % Undislocated solution
 
 end
 
@@ -63,7 +103,7 @@ else
 end
 
 if plotflag
-    output(x,L,wl,D,t,moviefile,v,umax,xold,uold,u0,du0,delta,wl0,Db,showdiff)
+    output(x,L,wl,D,t,moviefile,v,umax,xold,uold,u0,delta,wl0,Db,showdiff,epsilon,ictype)
 end
 
 %% Set up fourth order accurate differentiation matrices
@@ -100,7 +140,7 @@ while t<tend
 
         if plotflag&&(tout>dtout)
             tout = tout-dtout;
-            output(x,L,wl,D,t,moviefile,v,umax,xold,uold,u0,du0,delta,wl0,Db,showdiff)
+            output(x,L,wl,D,t,moviefile,v,umax,xold,uold,u0,delta,wl0,Db,showdiff,epsilon,ictype)
             save cont x t L tout uold u0
         end
 
@@ -111,7 +151,7 @@ while t<tend
 end
 
 if plotflag
-    output(x,L,wl,D,t,moviefile,v,umax,xold,uold,u0,du0,delta,wl0,Db,showdiff)
+    output(x,L,wl,D,t,moviefile,v,umax,xold,uold,u0,delta,wl0,Db,showdiff,epsilon,ictype)
 end
 
 if ~isempty(moviefile)
@@ -125,18 +165,7 @@ function RHS = RHS(L,FTphi)
 RHS = (1-ifftshift(real(ifft(fft(exp(L)) .* FTphi))))'; 
 
 %%
-function L = displace(x,pp,wl0,delta)
-L = zeros(size(x));
-for k = 1:length(x)
-    if abs(x(k))<0.5*delta
-        L(k) = ppval(pp,0);
-    else
-        L(k) = ppval(pp,mod(x(k)-sign(x(k))*0.5*delta,wl0));
-    end
-end
-
-%%
-function output(x,L,wl,D,t,moviefile,v,umax,xold,uold,u0,du0,delta,wl0,Db,showdiff)
+function output(x,L,wl,D,t,moviefile,v,umax,xold,uold,u0,delta,wl0,Db,showdiff,epsilon,ictype)
 persistent dumax
 figure(1)
 u = exp(L);
@@ -149,10 +178,10 @@ figure(1),clf
 if showdiff
     subplot(2,1,1)
     du = u-u0;
-    plot(x,du0,'k--',x,du,'k','LineWidth',1.2);
+    plot(x,du,'k','LineWidth',1.4);
     xlim([-0.5*wl 0.5*wl])
-    if delta>0
-        ylim([min(-umax*10*delta,1.1*min(du)) max(umax*10*delta,1.1*max(du))])
+    if any(du~=0)
+        ylim([1.1*min(du) 1.1*max(du)])
     end
     ylabel('$u(x,t;\delta)-u(x,0;0)$','interpreter','latex')
     grid on
@@ -162,7 +191,14 @@ end
 
 plot(x,u,'k','LineWidth',1.2);
 axis([-0.5*wl 0.5*wl 0 umax])
-title(sprintf('$t = %6.0f, D = 10^{%.g}, \\lambda = %1.4f, \\delta = 10^{%.g}, \\bar{D} = %1.5f$',t,log10(D),wl0,log10(delta),Db),'interpreter','latex')
+
+switch ictype
+    case 1
+        title(sprintf('$t = %6.0f, D = 10^{%.g}, \\lambda = %1.4f, \\delta = 10^{%.g}, \\bar{D} = %1.5f$',t,log10(D),wl0,log10(delta),Db),'interpreter','latex')
+    case {2,3}
+        title(sprintf('$t = %6.0f, D = 10^{%.g}, \\lambda = %1.4f, \\delta = 10^{%.g}, \\epsilon = %.3g, \\bar{D} = %1.5f$',t,log10(D),wl0,log10(delta),epsilon,Db),'interpreter','latex')
+end
+
 xlabel('x','interpreter','latex')
 ylabel('$u(x,t)$','interpreter','latex')
 grid on
