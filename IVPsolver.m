@@ -60,6 +60,7 @@ else
                     L(k) = ppval(pp,mod(x(k)-sign(x(k))*0.5*delta,wl0));
                 end
             end
+            u0 = exp(ppval(pp,mod(x,wl0))); % Undislocated solution
         case 2
             ep1 = 1/epsilon;
             for k = 1:length(x)
@@ -73,16 +74,17 @@ else
                     L(k) = ppval(pp,mod(x(k)+0.5*wl0+delta,wl0)-0.5*wl0);
                 end
             end
+            u0 = exp(ppval(pp,mod(x+0.5*wl0,wl0)-0.5*wl0)); % Undislocated solution
         case 3
-            L = ppval(pp,mod(x+0.5*wl0+delta*sin(2*pi*epsilon*x),wl0)-0.5*wl0);
+            L = ppval(pp,mod(x+0.5*wl0-delta*sin(2*pi*epsilon*x),wl0)-0.5*wl0);
+            u0 = exp(ppval(pp,mod(x+0.5*wl0,wl0)-0.5*wl0)); % Undislocated solution
     end
 
     u = exp(L);
-    u = u(2:end); L = L(2:end);
+    u = u(2:end); L = L(2:end); u0 = u0(2:end);
     x = x(2:end);
 
     t = 0; tout = 0; tout2=0;
-    u0 = exp(ppval(pp,mod(x+0.5*wl0,wl0)-0.5*wl0)); % Undislocated solution
 
 end
 
@@ -141,7 +143,10 @@ while t<tend
         if plotflag&&(tout>dtout)
             tout = tout-dtout;
             output(x,L,wl,D,t,moviefile,v,umax,xold,uold,u0,delta,wl0,Db,showdiff,epsilon,ictype)
-            save cont x t L tout uold u0
+            try
+                save cont x t L tout uold u0
+            catch
+            end
         end
 
         if (dumax<0.8*difftol)&&(t>10)

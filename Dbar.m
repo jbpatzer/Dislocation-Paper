@@ -25,7 +25,7 @@ Npsi = ifftshift(ifft(fft(psi(:,1).').* FTphi2));
 br = dx*chi'*(Npsi.*Fp).';
 
 %% Gp
-Gp = psi(:,2:end)*(br(2:end)/D+2*ar(2:end))./mu(2:end);
+Gp = psi(:,2:end)*((br(2:end)/D+2*ar(2:end))./mu(2:end));
 
 %% alphabar
 NGp = ifftshift(ifft(fft(Gp.').* FTphi2));
